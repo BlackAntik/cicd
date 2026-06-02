@@ -1,0 +1,663 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+
+jobs:
+  build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build producer image
+        run: |
+          docker build \
+            -f producer/Dockerfile \
+            -t warehouse-producer:${{ github.sha }} \
+            .
+
+      - name: Build consumer image
+        run: |
+          docker build \
+            -f consumer/Dockerfile \
+            -t warehouse-consumer:${{ github.sha }} \
+            .
+
+      - name: Build test image
+        run: |
+          docker build \
+            -f tests/Dockerfile.test \
+            -t warehouse-tests:${{ github.sha }} \
+            .
+
+      - name: Save images to cache
+        run: |
+          docker save warehouse-producer:${{ github.sha }} \
+                       warehouse-consumer:${{ github.sha }} \
+                       warehouse-tests:${{ github.sha }} \
+            | gzip > /tmp/images.tar.gz
+
+      - name: Upload image cache
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-images-${{ github.sha }}
+          path: /tmp/images.tar.gz
+          retention-days: 1
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download image cache
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images-${{ github.sha }}
+          path: /tmp
+
+      - name: Load Docker images
+        run: docker load < /tmp/images.tar.gz
+
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Run unit tests
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}/reports:/reports \
+            warehouse-tests:${{ github.sha }} \
+            pytest tests/unit/ \
+              -v \
+              --tb=short \
+              --junit-xml=/reports/unit-tests.xml
+
+      - name: Upload unit test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-test-results
+          path: reports/unit-tests.xml
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download image cache
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images-${{ github.sha }}
+          path: /tmp
+
+      - name: Load Docker images
+        run: |
+          docker load < /tmp/images.tar.gz
+          docker tag warehouse-consumer:${{ github.sha }} warehouse-consumer:latest
+          docker tag warehouse-tests:${{ github.sha }} warehouse-tests:latest
+
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Start infrastructure services
+        run: |
+          docker compose -f docker-compose.test.yml up -d \
+            zookeeper kafka schema-registry cassandra
+
+      - name: Wait for Zookeeper
+        run: |
+          timeout 60 bash -c \
+            'until docker compose -f docker-compose.test.yml exec -T zookeeper \
+              bash -c "echo ruok | nc localhost 2181" 2>/dev/null | grep -q imok; \
+            do sleep 2; done'
+
+      - name: Wait for Kafka
+        run: |
+          timeout 120 bash -c \
+            'until docker compose -f docker-compose.test.yml exec -T kafka \
+              kafka-broker-api-versions --bootstrap-server localhost:9092 \
+              >/dev/null 2>&1; \
+            do sleep 5; done'
+
+      - name: Wait for Schema Registry
+        run: |
+          timeout 120 bash -c \
+            'until curl -sf http://localhost:8081/subjects >/dev/null 2>&1; \
+            do sleep 5; done'
+
+      - name: Wait for Cassandra
+        run: |
+          timeout 240 bash -c \
+            'until docker compose -f docker-compose.test.yml exec -T cassandra \
+              nodetool status 2>/dev/null | grep -qE "^UN\s+"; \
+            do sleep 10; done'
+
+      - name: Initialize Kafka topics and Cassandra schema
+        run: |
+          docker compose -f docker-compose.test.yml up \
+            kafka-init cassandra-init schema-init \
+            --exit-code-from schema-init
+
+      - name: Start consumer service
+        run: |
+          docker compose -f docker-compose.test.yml up -d consumer
+
+      - name: Wait for consumer health
+        run: |
+          timeout 120 bash -c \
+            'until curl -sf http://localhost:8000/health >/dev/null 2>&1; \
+            do sleep 5; done'
+
+      - name: Run integration tests
+        run: |
+          docker compose -f docker-compose.test.yml run --rm \
+            -e KAFKA_BOOTSTRAP_SERVERS=kafka:29092 \
+            -e SCHEMA_REGISTRY_URL=http://schema-registry:8081 \
+            -e CASSANDRA_HOSTS=cassandra \
+            -e CASSANDRA_PORT=9042 \
+            -e CASSANDRA_KEYSPACE=warehouse \
+            -e CONSUMER_URL=http://consumer:8000 \
+            -e KAFKA_TOPIC=warehouse-events \
+            -e EVENT_PROPAGATION_TIMEOUT=15 \
+            -v ${{ github.workspace }}/reports:/reports \
+            integration-tests
+
+      - name: Upload integration test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-results
+          path: reports/integration-tests.xml
+
+      - name: Show consumer logs on failure
+        if: failure()
+        run: |
+          docker compose -f docker-compose.test.yml logs consumer --tail=100
+          docker compose -f docker-compose.test.yml logs kafka --tail=50
+
+      - name: Stop all services
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v --remove-orphans
+
+  e2e-tests:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: integration-tests
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download image cache
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images-${{ github.sha }}
+          path: /tmp
+
+      - name: Load Docker images
+        run: |
+          docker load < /tmp/images.tar.gz
+          docker tag warehouse-consumer:${{ github.sha }} warehouse-consumer:latest
+          docker tag warehouse-tests:${{ github.sha }} warehouse-tests:latest
+
+      - name: Start full stack
+        run: |
+          docker compose -f docker-compose.test.yml up -d \
+            zookeeper kafka schema-registry cassandra
+
+      - name: Wait for infrastructure
+        run: |
+          timeout 120 bash -c \
+            'until docker compose -f docker-compose.test.yml exec -T kafka \
+              kafka-broker-api-versions --bootstrap-server localhost:9092 \
+              >/dev/null 2>&1; \
+            do sleep 5; done'
+
+          timeout 120 bash -c \
+            'until curl -sf http://localhost:8081/subjects >/dev/null 2>&1; \
+            do sleep 5; done'
+
+          timeout 240 bash -c \
+            'until docker compose -f docker-compose.test.yml exec -T cassandra \
+              nodetool status 2>/dev/null | grep -qE "^UN\s+"; \
+            do sleep 10; done'
+
+      - name: Initialize services
+        run: |
+          docker compose -f docker-compose.test.yml up \
+            kafka-init cassandra-init schema-init \
+            --exit-code-from schema-init
+
+      - name: Start consumer
+        run: |
+          docker compose -f docker-compose.test.yml up -d consumer
+          timeout 120 bash -c \
+            'until curl -sf http://localhost:8000/health >/dev/null 2>&1; \
+            do sleep 5; done'
+
+      - name: Run E2E scenario 1
+        run: |
+          docker compose -f docker-compose.test.yml run --rm \
+            -e KAFKA_BOOTSTRAP_SERVERS=kafka:29092 \
+            -e SCHEMA_REGISTRY_URL=http://schema-registry:8081 \
+            -e CASSANDRA_HOSTS=cassandra \
+            -e CASSANDRA_PORT=9042 \
+            -e CASSANDRA_KEYSPACE=warehouse \
+            -w /app \
+            unit-tests \
+            python e2e/scenario1.py
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          docker compose -f docker-compose.test.yml logs consumer --tail=100
+
+      - name: Stop all services
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v --remove-orphans
+
+  load-tests:
+    name: Load Tests (k6)
+    runs-on: ubuntu-latest
+    needs: integration-tests
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download image cache
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images-${{ github.sha }}
+          path: /tmp
+
+      - name: Load Docker images
+        run: |
+          docker load < /tmp/images.tar.gz
+          docker tag warehouse-consumer:${{ github.sha }} warehouse-consumer:latest
+
+      - name: Start infrastructure
+        run: |
+          docker compose -f docker-compose.test.yml up -d \
+            zookeeper kafka schema-registry cassandra
+
+      - name: Wait for Kafka
+        run: |
+          timeout 120 bash -c \
+            'until docker compose -f docker-compose.test.yml exec -T kafka \
+              kafka-broker-api-versions --bootstrap-server localhost:9092 \
+              >/dev/null 2>&1; \
+            do sleep 5; done'
+
+      - name: Wait for Cassandra
+        run: |
+          timeout 240 bash -c \
+            'until docker compose -f docker-compose.test.yml exec -T cassandra \
+              nodetool status 2>/dev/null | grep -qE "^UN\s+"; \
+            do sleep 10; done'
+
+      - name: Initialize services
+        run: |
+          docker compose -f docker-compose.test.yml up \
+            kafka-init cassandra-init schema-init \
+            --exit-code-from schema-init
+
+      - name: Start consumer
+        run: |
+          docker compose -f docker-compose.test.yml up -d consumer
+          timeout 120 bash -c \
+            'until curl -sf http://localhost:8000/health >/dev/null 2>&1; \
+            do sleep 5; done'
+
+      - name: Install k6
+        run: |
+          curl -fsSL https://dl.k6.io/key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/k6-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" \
+            | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update -qq
+          sudo apt-get install -y k6
+
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Run k6 load test
+        run: |
+          k6 run \
+            --env CONSUMER_URL=http://localhost:8000 \
+            --out json=reports/load-test-results.json \
+            load-tests/consumer_load_test.js \
+            2>&1 | tee reports/load-test-output.txt
+
+      - name: Health check after load test
+        run: |
+          STATUS=$(curl -sf -o /dev/null -w "%{http_code}" http://localhost:8000/health)
+          if [ "$STATUS" != "200" ]; then
+            echo "Health check failed after load test: HTTP $STATUS"
+            exit 1
+          fi
+          echo "Health check passed: HTTP $STATUS"
+
+      - name: Upload load test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: load-test-results
+          path: |
+            reports/load-test-results.json
+            reports/load-test-output.txt
+            reports/load-test-summary.json
+
+      - name: Show consumer logs on failure
+        if: failure()
+        run: |
+          docker compose -f docker-compose.test.yml logs consumer --tail=100
+
+      - name: Stop all services
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v --remove-orphans
+
+  validate-metrics:
+    name: Validate Prometheus Metrics
+    runs-on: ubuntu-latest
+    needs: integration-tests
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download image cache
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images-${{ github.sha }}
+          path: /tmp
+
+      - name: Load Docker images
+        run: |
+          docker load < /tmp/images.tar.gz
+          docker tag warehouse-consumer:${{ github.sha }} warehouse-consumer:latest
+
+      - name: Start infrastructure
+        run: |
+          docker compose -f docker-compose.test.yml up -d \
+            zookeeper kafka schema-registry cassandra
+
+      - name: Wait for infrastructure
+        run: |
+          timeout 120 bash -c \
+            'until docker compose -f docker-compose.test.yml exec -T kafka \
+              kafka-broker-api-versions --bootstrap-server localhost:9092 \
+              >/dev/null 2>&1; \
+            do sleep 5; done'
+          timeout 240 bash -c \
+            'until docker compose -f docker-compose.test.yml exec -T cassandra \
+              nodetool status 2>/dev/null | grep -qE "^UN\s+"; \
+            do sleep 10; done'
+
+      - name: Initialize
+        run: |
+          docker compose -f docker-compose.test.yml up \
+            kafka-init cassandra-init schema-init \
+            --exit-code-from schema-init
+
+      - name: Start consumer
+        run: |
+          docker compose -f docker-compose.test.yml up -d consumer
+          timeout 120 bash -c \
+            'until curl -sf http://localhost:8000/health >/dev/null 2>&1; \
+            do sleep 5; done'
+
+      - name: Validate /metrics endpoint
+        run: |
+          METRICS=$(curl -sf http://localhost:8000/metrics)
+
+          check_metric() {
+            local metric=$1
+            if echo "$METRICS" | grep -q "$metric"; then
+              echo "[OK] $metric found"
+            else
+              echo "[FAIL] $metric NOT found"
+              exit 1
+            fi
+          }
+
+          check_metric "events_processed_total"
+          check_metric "event_processing_duration_seconds"
+          check_metric "cassandra_write_errors_total"
+          check_metric "consumer_lag"
+
+      - name: Validate Prometheus config
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}/monitoring:/etc/prometheus:ro \
+            prom/prometheus:v2.51.0 \
+            promtool check config /etc/prometheus/prometheus.yml
+
+      - name: Validate alert rules
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}/monitoring:/etc/prometheus:ro \
+            prom/prometheus:v2.51.0 \
+            promtool check rules /etc/prometheus/alerts.yml
+
+      - name: Stop all services
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v --remove-orphans
+
+  e2e-load-metrics:
+    name: E2E + Load + Prometheus Metrics Check
+    runs-on: ubuntu-latest
+    needs: integration-tests
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download image cache
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images-${{ github.sha }}
+          path: /tmp
+
+      - name: Load Docker images
+        run: |
+          docker load < /tmp/images.tar.gz
+          docker tag warehouse-producer:${{ github.sha }} warehouse-producer:latest
+          docker tag warehouse-consumer:${{ github.sha }} warehouse-consumer:latest
+          docker tag warehouse-tests:${{ github.sha }} warehouse-tests:latest
+
+      - name: Start full stack with Prometheus
+        run: |
+          docker compose -f docker-compose.test.yml up -d \
+            zookeeper kafka schema-registry cassandra
+
+      - name: Wait for Kafka
+        run: |
+          timeout 120 bash -c \
+            'until docker compose -f docker-compose.test.yml exec -T kafka \
+              kafka-broker-api-versions --bootstrap-server localhost:9092 \
+              >/dev/null 2>&1; \
+            do sleep 5; done'
+
+      - name: Wait for Schema Registry
+        run: |
+          timeout 120 bash -c \
+            'until curl -sf http://localhost:8081/subjects >/dev/null 2>&1; \
+            do sleep 5; done'
+
+      - name: Wait for Cassandra
+        run: |
+          timeout 240 bash -c \
+            'until docker compose -f docker-compose.test.yml exec -T cassandra \
+              nodetool status 2>/dev/null | grep -qE "^UN\s+"; \
+            do sleep 10; done'
+
+      - name: Initialize services
+        run: |
+          docker compose -f docker-compose.test.yml up \
+            kafka-init cassandra-init schema-init \
+            --exit-code-from schema-init
+
+      - name: Start consumer
+        run: |
+          docker compose -f docker-compose.test.yml up -d consumer
+          timeout 120 bash -c \
+            'until curl -sf http://localhost:8000/health >/dev/null 2>&1; \
+            do sleep 5; done'
+
+      - name: Start Prometheus
+        run: |
+          docker run -d \
+            --name prometheus \
+            --network "$(docker compose -f docker-compose.test.yml ps -q consumer | xargs docker inspect --format '{{range .NetworkSettings.Networks}}{{.NetworkID}}{{end}}' | head -1)" \
+            -p 9090:9090 \
+            -v ${{ github.workspace }}/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro \
+            -v ${{ github.workspace }}/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro \
+            prom/prometheus:v2.51.0 \
+            --config.file=/etc/prometheus/prometheus.yml \
+            --storage.tsdb.path=/prometheus
+          timeout 60 bash -c \
+            'until curl -sf http://localhost:9090/-/ready >/dev/null 2>&1; \
+            do sleep 3; done'
+
+      - name: Install k6
+        run: |
+          curl -fsSL https://dl.k6.io/key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/k6-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" \
+            | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update -qq
+          sudo apt-get install -y k6
+
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Run k6 load test (background) and collect Prometheus metrics in parallel
+        run: |
+          k6 run \
+            --env CONSUMER_URL=http://localhost:8000 \
+            --out json=reports/e2e-load-results.json \
+            load-tests/consumer_load_test.js \
+            2>&1 | tee reports/e2e-load-output.txt &
+          K6_PID=$!
+
+          sleep 15
+
+          echo "Collecting Prometheus snapshots during load..."
+          for metric in \
+            "sum(rate(http_requests_total{job=\"warehouse-consumer\"}[1m]))" \
+            "sum(rate(http_request_errors_total{job=\"warehouse-consumer\"}[1m]))" \
+            "histogram_quantile(0.95,sum(rate(http_request_duration_seconds_bucket{job=\"warehouse-consumer\"}[1m]))by(le))*1000" \
+            "sum(rate(events_processed_total{job=\"warehouse-consumer\"}[1m]))" \
+            "sum(consumer_lag{job=\"warehouse-consumer\"})"; do
+            label=$(echo "$metric" | sed 's/[^a-zA-Z0-9]/_/g' | cut -c1-60)
+            value=$(curl -sf "${PROMETHEUS_URL:-http://localhost:9090}/api/v1/query" \
+              --data-urlencode "query=${metric}" \
+              | python3 -c "import sys,json; d=json.load(sys.stdin); r=d['data']['result']; print(r[0]['value'][1] if r else 'no_data')" \
+              2>/dev/null || echo "error")
+            echo "${label}=${value}" >> reports/prometheus-live-snapshot.txt
+          done
+
+          wait $K6_PID
+          K6_EXIT=$?
+
+          echo "k6 exit code: ${K6_EXIT}"
+          exit ${K6_EXIT}
+        env:
+          PROMETHEUS_URL: http://localhost:9090
+
+      - name: Wait for Prometheus to scrape post-load metrics
+        run: sleep 20
+
+      - name: Check Prometheus metrics against thresholds
+        run: |
+          chmod +x load-tests/check_prometheus_metrics.sh
+          PROMETHEUS_URL=http://localhost:9090 \
+          REPORT_FILE=reports/prometheus-check-report.json \
+          bash load-tests/check_prometheus_metrics.sh
+
+      - name: Health check after load
+        run: |
+          STATUS=$(curl -sf -o /dev/null -w "%{http_code}" http://localhost:8000/health)
+          if [ "$STATUS" != "200" ]; then
+            echo "Health check failed after load: HTTP $STATUS"
+            exit 1
+          fi
+          echo "Service healthy after load: HTTP $STATUS"
+
+      - name: Upload all artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-load-metrics-results
+          path: |
+            reports/e2e-load-results.json
+            reports/e2e-load-output.txt
+            reports/prometheus-check-report.json
+            reports/prometheus-live-snapshot.txt
+
+      - name: Show consumer logs on failure
+        if: failure()
+        run: |
+          docker compose -f docker-compose.test.yml logs consumer --tail=100
+          docker logs prometheus --tail=50 2>/dev/null || true
+
+      - name: Stop all services
+        if: always()
+        run: |
+          docker stop prometheus 2>/dev/null || true
+          docker rm prometheus 2>/dev/null || true
+          docker compose -f docker-compose.test.yml down -v --remove-orphans
+
+  pipeline-summary:
+    name: Pipeline Summary
+    runs-on: ubuntu-latest
+    needs:
+      - build
+      - unit-tests
+      - integration-tests
+      - e2e-tests
+      - validate-metrics
+      - load-tests
+      - e2e-load-metrics
+    if: always()
+    steps:
+      - name: Check all jobs status
+        run: |
+          echo "Build:              ${{ needs.build.result }}"
+          echo "Unit Tests:         ${{ needs.unit-tests.result }}"
+          echo "Integration Tests:  ${{ needs.integration-tests.result }}"
+          echo "E2E Tests:          ${{ needs.e2e-tests.result }}"
+          echo "Validate Metrics:   ${{ needs.validate-metrics.result }}"
+          echo "Load Tests:         ${{ needs.load-tests.result }}"
+          echo "E2E+Load+Metrics:   ${{ needs.e2e-load-metrics.result }}"
+
+          if [[ "${{ needs.build.result }}" != "success" ]] || \
+             [[ "${{ needs.unit-tests.result }}" != "success" ]] || \
+             [[ "${{ needs.integration-tests.result }}" != "success" ]] || \
+             [[ "${{ needs.e2e-tests.result }}" != "success" ]] || \
+             [[ "${{ needs.validate-metrics.result }}" != "success" ]] || \
+             [[ "${{ needs.load-tests.result }}" != "success" ]] || \
+             [[ "${{ needs.e2e-load-metrics.result }}" != "success" ]]; then
+            exit 1
+          fi

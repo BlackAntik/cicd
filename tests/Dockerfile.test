@@ -1,0 +1,25 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libev4 \
+    libev-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY tests/requirements.txt /app/tests/requirements.txt
+RUN pip install --no-cache-dir -r /app/tests/requirements.txt
+
+COPY consumer/consumer.py /app/consumer/consumer.py
+COPY producer/producer.py /app/producer/producer.py
+COPY schemas/ /app/schemas/
+
+COPY tests/ /app/tests/
+
+COPY e2e/ /app/e2e/
+
+WORKDIR /app
+
+CMD ["pytest", "tests/", "-v", "--tb=short"]

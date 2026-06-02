@@ -1,0 +1,33 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: warehouse-consumer
+    static_configs:
+      - targets:
+          - consumer:8000
+
+  - job_name: warehouse-producer
+    static_configs:
+      - targets:
+          - producer:8001
+
+  - job_name: kafka-exporter
+    static_configs:
+      - targets:
+          - kafka-exporter:9308
+
+  - job_name: cassandra-exporter
+    static_configs:
+      - targets:
+          - cassandra-exporter:9500

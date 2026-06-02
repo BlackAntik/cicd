@@ -1,0 +1,266 @@
+{
+  "title": "Warehouse Consumer",
+  "uid": "warehouse-consumer",
+  "schemaVersion": 38,
+  "version": 2,
+  "refresh": "10s",
+  "time": {"from": "now-15m", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "title": "Consumer Lag by Partition",
+      "type": "timeseries",
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "consumer_lag",
+          "legendFormat": "partition={{partition}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {"lineWidth": 2}
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Events Processed per Second",
+      "type": "timeseries",
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "rate(events_processed_total[1m])",
+          "legendFormat": "{{event_type}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {"lineWidth": 2}
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Cassandra Write Errors per Second",
+      "type": "timeseries",
+      "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "rate(cassandra_write_errors_total[1m])",
+          "legendFormat": "write errors/s",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {"mode": "fixed", "fixedColor": "red"},
+          "custom": {"lineWidth": 2}
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Event Processing Duration (p50/p95/p99)",
+      "type": "timeseries",
+      "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.50, rate(event_processing_duration_seconds_bucket[1m]))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.95, rate(event_processing_duration_seconds_bucket[1m]))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.99, rate(event_processing_duration_seconds_bucket[1m]))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {"lineWidth": 2}
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Total Events Processed",
+      "type": "stat",
+      "gridPos": {"x": 0, "y": 16, "w": 6, "h": 4},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "sum(events_processed_total)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "short"}
+      }
+    },
+    {
+      "id": 6,
+      "title": "Total Cassandra Write Errors",
+      "type": "stat",
+      "gridPos": {"x": 6, "y": 16, "w": 6, "h": 4},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "sum(cassandra_write_errors_total)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "red", "value": 1}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "HTTP Requests per Second",
+      "type": "timeseries",
+      "gridPos": {"x": 0, "y": 20, "w": 12, "h": 8},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "sum(rate(http_requests_total{job=\"warehouse-consumer\"}[1m])) by (method, endpoint)",
+          "legendFormat": "{{method}} {{endpoint}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {"lineWidth": 2}
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "HTTP Error Rate per Second",
+      "type": "timeseries",
+      "gridPos": {"x": 12, "y": 20, "w": 12, "h": 8},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "sum(rate(http_request_errors_total{job=\"warehouse-consumer\"}[1m])) by (method, endpoint, error_type)",
+          "legendFormat": "{{method}} {{endpoint}} ({{error_type}})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {"mode": "fixed", "fixedColor": "orange"},
+          "custom": {"lineWidth": 2}
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "HTTP Request Duration (p50/p95/p99)",
+      "type": "timeseries",
+      "gridPos": {"x": 0, "y": 28, "w": 24, "h": 8},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{job=\"warehouse-consumer\"}[1m])) by (le, endpoint))",
+          "legendFormat": "p50 {{endpoint}}",
+          "refId": "A"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"warehouse-consumer\"}[1m])) by (le, endpoint))",
+          "legendFormat": "p95 {{endpoint}}",
+          "refId": "B"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job=\"warehouse-consumer\"}[1m])) by (le, endpoint))",
+          "legendFormat": "p99 {{endpoint}}",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {"lineWidth": 2}
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Total HTTP Requests",
+      "type": "stat",
+      "gridPos": {"x": 0, "y": 36, "w": 6, "h": 4},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "sum(http_requests_total{job=\"warehouse-consumer\"})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 11,
+      "title": "Total HTTP Errors",
+      "type": "stat",
+      "gridPos": {"x": 6, "y": 36, "w": 6, "h": 4},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "sum(http_request_errors_total{job=\"warehouse-consumer\"})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "red", "value": 1}
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "type": "record",
+  "name": "WarehouseEvent",
+  "namespace": "com.warehouse.events",
+  "fields": [
+    {"name": "event_id", "type": "string"},
+    {"name": "event_type", "type": {
+      "type": "enum",
+      "name": "EventType",
+      "symbols": [
+        "PRODUCT_RECEIVED",
+        "PRODUCT_SHIPPED",
+        "PRODUCT_MOVED",
+        "PRODUCT_RESERVED",
+        "PRODUCT_RELEASED",
+        "INVENTORY_COUNTED",
+        "ORDER_CREATED",
+        "ORDER_COMPLETED"
+      ]
+    }},
+    {"name": "timestamp", "type": "long"},
+    {"name": "sku", "type": ["null", "string"], "default": null},
+    {"name": "zone_id", "type": ["null", "string"], "default": null},
+    {"name": "source_zone_id", "type": ["null", "string"], "default": null},
+    {"name": "destination_zone_id", "type": ["null", "string"], "default": null},
+    {"name": "quantity", "type": ["null", "int"], "default": null},
+    {"name": "order_id", "type": ["null", "string"], "default": null},
+    {"name": "product_name", "type": ["null", "string"], "default": null},
+    {"name": "items", "type": ["null", "string"], "default": null},
+    {"name": "supplier_id", "type": ["null", "string"], "default": null}
+  ]
+}

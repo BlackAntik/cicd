@@ -1,0 +1,265 @@
+groups:
+  - name: warehouse-sli
+    rules:
+      - alert: SLI_ApiAvailabilityBreached
+        expr: >
+          (
+            sum(rate(http_requests_total{job="warehouse-consumer"}[5m]))
+            -
+            sum(rate(http_request_errors_total{job="warehouse-consumer"}[5m]))
+          )
+          /
+          (sum(rate(http_requests_total{job="warehouse-consumer"}[5m])) + 0.001)
+          < 0.95
+        for: 5m
+        labels:
+          severity: critical
+          sli: api_availability
+        annotations:
+          summary: "SLI BREACH: API availability dropped below 95% (failure threshold)"
+          description: "API availability is {{ $value | humanizePercentage }}. SLO=99.5%, failure threshold=95%"
+
+      - alert: SLI_ApiAvailabilityWarning
+        expr: >
+          (
+            sum(rate(http_requests_total{job="warehouse-consumer"}[5m]))
+            -
+            sum(rate(http_request_errors_total{job="warehouse-consumer"}[5m]))
+          )
+          /
+          (sum(rate(http_requests_total{job="warehouse-consumer"}[5m])) + 0.001)
+          < 0.995
+        for: 5m
+        labels:
+          severity: warning
+          sli: api_availability
+        annotations:
+          summary: "SLI WARNING: API availability dropped below SLO 99.5%"
+          description: "API availability is {{ $value | humanizePercentage }}. SLO target=99.5%"
+
+      - alert: SLI_EventProcessingLatencyBreached
+        expr: >
+          histogram_quantile(0.95,
+            sum(rate(event_processing_duration_seconds_bucket{job="warehouse-consumer"}[5m])) by (le)
+          ) > 5.0
+        for: 5m
+        labels:
+          severity: critical
+          sli: event_processing_latency
+        annotations:
+          summary: "SLI BREACH: Event processing p95 latency exceeded 5s (failure threshold)"
+          description: "Event processing p95 latency is {{ $value | humanizeDuration }}. SLO=2s, failure threshold=5s"
+
+      - alert: SLI_EventProcessingLatencyWarning
+        expr: >
+          histogram_quantile(0.95,
+            sum(rate(event_processing_duration_seconds_bucket{job="warehouse-consumer"}[5m])) by (le)
+          ) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+          sli: event_processing_latency
+        annotations:
+          summary: "SLI WARNING: Event processing p95 latency exceeded SLO 2s"
+          description: "Event processing p95 latency is {{ $value | humanizeDuration }}. SLO target=2s"
+
+      - alert: SLI_ConsumerLagBreached
+        expr: sum(consumer_lag{job="warehouse-consumer"}) > 500
+        for: 5m
+        labels:
+          severity: critical
+          sli: consumer_lag
+        annotations:
+          summary: "SLI BREACH: Consumer lag exceeded 500 messages (failure threshold)"
+          description: "Consumer lag is {{ $value }} messages. SLO=100, failure threshold=500"
+
+      - alert: SLI_ConsumerLagWarning
+        expr: sum(consumer_lag{job="warehouse-consumer"}) > 100
+        for: 2m
+        labels:
+          severity: warning
+          sli: consumer_lag
+        annotations:
+          summary: "SLI WARNING: Consumer lag exceeded SLO 100 messages"
+          description: "Consumer lag is {{ $value }} messages. SLO target=100"
+
+  - name: warehouse-availability
+    rules:
+      - alert: TargetDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Target {{ $labels.job }} is down"
+          description: "Prometheus target {{ $labels.job }} ({{ $labels.instance }}) has been unreachable for more than 1 minute"
+
+      - alert: ConsumerDown
+        expr: absent(up{job="warehouse-consumer"}) or up{job="warehouse-consumer"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Warehouse consumer is down"
+          description: "The warehouse consumer service has been unreachable for more than 1 minute"
+
+      - alert: ProducerDown
+        expr: absent(up{job="warehouse-producer"}) or up{job="warehouse-producer"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Warehouse producer is down"
+          description: "The warehouse producer service has been unreachable for more than 1 minute"
+
+  - name: warehouse-consumer
+    rules:
+      - alert: ConsumerHighErrorRate
+        expr: >
+          sum(rate(http_request_errors_total{job="warehouse-consumer"}[5m]))
+          /
+          (sum(rate(http_requests_total{job="warehouse-consumer"}[5m])) + 0.001)
+          > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Consumer HTTP error rate exceeds 5%"
+          description: "HTTP error rate is {{ $value | humanizePercentage }} over the last 5 minutes"
+
+      - alert: ConsumerCriticalErrorRate
+        expr: >
+          sum(rate(http_request_errors_total{job="warehouse-consumer"}[5m]))
+          /
+          (sum(rate(http_requests_total{job="warehouse-consumer"}[5m])) + 0.001)
+          > 0.20
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Consumer HTTP error rate exceeds 20%"
+          description: "HTTP error rate is {{ $value | humanizePercentage }} — service is degraded"
+
+      - alert: ConsumerHighP95Latency
+        expr: >
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket{job="warehouse-consumer"}[5m])) by (le)
+          ) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Consumer HTTP p95 latency exceeds 1s"
+          description: "p95 HTTP latency is {{ $value | humanizeDuration }} over the last 5 minutes"
+
+      - alert: ConsumerHighP99Latency
+        expr: >
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket{job="warehouse-consumer"}[5m])) by (le)
+          ) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Consumer HTTP p99 latency exceeds 2s"
+          description: "p99 HTTP latency is {{ $value | humanizeDuration }}"
+
+      - alert: ConsumerEventProcessingSlowP95
+        expr: >
+          histogram_quantile(0.95,
+            sum(rate(event_processing_duration_seconds_bucket{job="warehouse-consumer"}[5m])) by (le)
+          ) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Event processing p95 latency exceeds 2s"
+          description: "p95 event processing latency is {{ $value | humanizeDuration }} (Kafka→Cassandra round-trip)"
+
+      - alert: ConsumerLagHigh
+        expr: sum(consumer_lag) > 50
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Consumer lag is high"
+          description: "Total consumer lag is {{ $value }} messages"
+
+      - alert: ConsumerLagCritical
+        expr: sum(consumer_lag) > 200
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Consumer lag is critical"
+          description: "Total consumer lag is {{ $value }} messages — consumer may be falling behind"
+
+      - alert: CassandraWriteErrorRateHigh
+        expr: >
+          sum(rate(cassandra_write_errors_total{job="warehouse-consumer"}[5m]))
+          /
+          (sum(rate(events_processed_total{job="warehouse-consumer"}[5m])) + 0.001)
+          > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cassandra write error rate exceeds 5%"
+          description: "Cassandra write error rate is {{ $value | humanizePercentage }}"
+
+      - alert: CassandraWriteErrors
+        expr: rate(cassandra_write_errors_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cassandra write errors detected"
+          description: "Write error rate is {{ $value }} errors/s"
+
+  - name: warehouse-producer
+    rules:
+      - alert: ProducerHighKafkaErrorRate
+        expr: >
+          sum(rate(kafka_produce_errors_total{job="warehouse-producer"}[5m]))
+          /
+          (sum(rate(kafka_messages_produced_total{job="warehouse-producer"}[5m])) + 0.001)
+          > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Producer Kafka error rate exceeds 5%"
+          description: "Kafka produce error rate is {{ $value | humanizePercentage }}"
+
+      - alert: ProducerKafkaErrors
+        expr: rate(kafka_produce_errors_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Producer Kafka errors detected"
+          description: "Kafka produce error rate is {{ $value }} errors/s"
+
+      - alert: ProducerSlowP95
+        expr: >
+          histogram_quantile(0.95,
+            sum(rate(kafka_produce_duration_seconds_bucket{job="warehouse-producer"}[5m])) by (le)
+          ) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Producer Kafka p95 produce latency exceeds 1s"
+          description: "p95 produce latency is {{ $value | humanizeDuration }}"
+
+      - alert: ProducerSlowMessages
+        expr: >
+          histogram_quantile(0.99,
+            sum(rate(kafka_produce_duration_seconds_bucket{job="warehouse-producer"}[5m])) by (le)
+          ) > 1.0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Producer Kafka p99 produce latency exceeds 1s"
+          description: "p99 produce latency is {{ $value | humanizeDuration }}"

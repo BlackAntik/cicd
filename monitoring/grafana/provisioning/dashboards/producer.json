@@ -1,0 +1,233 @@
+{
+  "title": "Warehouse Producer",
+  "uid": "warehouse-producer",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "10s",
+  "time": {"from": "now-15m", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "title": "Kafka Messages Produced per Second",
+      "type": "timeseries",
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "sum(rate(kafka_messages_produced_total{job=\"warehouse-producer\"}[1m])) by (topic, event_type)",
+          "legendFormat": "{{topic}} / {{event_type}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {"lineWidth": 2}
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Kafka Produce Errors per Second",
+      "type": "timeseries",
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "sum(rate(kafka_produce_errors_total{job=\"warehouse-producer\"}[1m])) by (topic, error_type)",
+          "legendFormat": "{{topic}} ({{error_type}})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {"mode": "fixed", "fixedColor": "red"},
+          "custom": {"lineWidth": 2}
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Kafka Produce Duration (p50/p95/p99)",
+      "type": "timeseries",
+      "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.50, sum(rate(kafka_produce_duration_seconds_bucket{job=\"warehouse-producer\"}[1m])) by (le, topic))",
+          "legendFormat": "p50 {{topic}}",
+          "refId": "A"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.95, sum(rate(kafka_produce_duration_seconds_bucket{job=\"warehouse-producer\"}[1m])) by (le, topic))",
+          "legendFormat": "p95 {{topic}}",
+          "refId": "B"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.99, sum(rate(kafka_produce_duration_seconds_bucket{job=\"warehouse-producer\"}[1m])) by (le, topic))",
+          "legendFormat": "p99 {{topic}}",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {"lineWidth": 2}
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "HTTP Requests per Second",
+      "type": "timeseries",
+      "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "sum(rate(http_requests_total{job=\"warehouse-producer\"}[1m])) by (method, endpoint)",
+          "legendFormat": "{{method}} {{endpoint}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {"lineWidth": 2}
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "HTTP Request Duration (p50/p95/p99)",
+      "type": "timeseries",
+      "gridPos": {"x": 0, "y": 16, "w": 24, "h": 8},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{job=\"warehouse-producer\"}[1m])) by (le, endpoint))",
+          "legendFormat": "p50 {{endpoint}}",
+          "refId": "A"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"warehouse-producer\"}[1m])) by (le, endpoint))",
+          "legendFormat": "p95 {{endpoint}}",
+          "refId": "B"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job=\"warehouse-producer\"}[1m])) by (le, endpoint))",
+          "legendFormat": "p99 {{endpoint}}",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {"lineWidth": 2}
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Total Messages Produced",
+      "type": "stat",
+      "gridPos": {"x": 0, "y": 24, "w": 6, "h": 4},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "sum(kafka_messages_produced_total{job=\"warehouse-producer\"})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Total Kafka Produce Errors",
+      "type": "stat",
+      "gridPos": {"x": 6, "y": 24, "w": 6, "h": 4},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "sum(kafka_produce_errors_total{job=\"warehouse-producer\"})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "red", "value": 1}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Total HTTP Requests",
+      "type": "stat",
+      "gridPos": {"x": 12, "y": 24, "w": 6, "h": 4},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "sum(http_requests_total{job=\"warehouse-producer\"})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "Total HTTP Errors",
+      "type": "stat",
+      "gridPos": {"x": 18, "y": 24, "w": 6, "h": 4},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "sum(http_request_errors_total{job=\"warehouse-producer\"})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "red", "value": 1}
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

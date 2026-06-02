@@ -1,0 +1,4 @@
+confluent-kafka[avro]==2.3.0
+fastavro==1.9.4
+cassandra-driver==3.29.1
+requests==2.31.0
