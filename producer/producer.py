@@ -10,7 +10,7 @@ from confluent_kafka import SerializingProducer
 from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroSerializer
 from confluent_kafka.serialization import StringSerializer
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import Counter, Histogram, CollectorRegistry, generate_latest, CONTENT_TYPE_LATEST
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger(__name__)
@@ -29,37 +29,45 @@ PRODUCT_NAMES = {
     'SKU-005': 'Component Z',
 }
 
+METRICS_REGISTRY = CollectorRegistry()
+
 KAFKA_MESSAGES_PRODUCED_TOTAL = Counter(
     'kafka_messages_produced_total',
     'Total number of messages successfully produced to Kafka',
     ['topic', 'event_type'],
+    registry=METRICS_REGISTRY,
 )
 KAFKA_PRODUCE_ERRORS_TOTAL = Counter(
     'kafka_produce_errors_total',
     'Total number of Kafka produce errors',
     ['topic', 'error_type'],
+    registry=METRICS_REGISTRY,
 )
 KAFKA_PRODUCE_DURATION_SECONDS = Histogram(
     'kafka_produce_duration_seconds',
     'Time spent producing a single message to Kafka',
     ['topic', 'event_type'],
     buckets=[0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0],
+    registry=METRICS_REGISTRY,
 )
 HTTP_REQUESTS_TOTAL = Counter(
     'http_requests_total',
     'Total number of HTTP requests to the metrics server',
     ['method', 'endpoint', 'status'],
+    registry=METRICS_REGISTRY,
 )
 HTTP_REQUEST_ERRORS_TOTAL = Counter(
     'http_request_errors_total',
     'Total number of HTTP request errors',
     ['method', 'endpoint', 'error_type'],
+    registry=METRICS_REGISTRY,
 )
 HTTP_REQUEST_DURATION_SECONDS = Histogram(
     'http_request_duration_seconds',
     'HTTP request duration in seconds',
     ['method', 'endpoint'],
     buckets=[0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0],
+    registry=METRICS_REGISTRY,
 )
 
 
@@ -73,7 +81,7 @@ class ProducerMetricsHandler(BaseHTTPRequestHandler):
 
         try:
             if endpoint == '/metrics':
-                data = generate_latest()
+                data = generate_latest(METRICS_REGISTRY)
                 self.send_response(200)
                 self.send_header('Content-Type', CONTENT_TYPE_LATEST)
                 self.end_headers()

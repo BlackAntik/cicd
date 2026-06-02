@@ -16,45 +16,54 @@ from cassandra.cluster import Cluster
 from cassandra.policies import DCAwareRoundRobinPolicy
 from cassandra.query import BatchStatement, SimpleStatement, BatchType, ConsistencyLevel
 
-from prometheus_client import Counter, Gauge, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import Counter, Gauge, Histogram, CollectorRegistry, generate_latest, CONTENT_TYPE_LATEST
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger(__name__)
+
+METRICS_REGISTRY = CollectorRegistry()
 
 EVENTS_PROCESSED = Counter(
     'events_processed_total',
     'Total number of processed events',
     ['event_type'],
+    registry=METRICS_REGISTRY,
 )
 PROCESSING_DURATION = Histogram(
     'event_processing_duration_seconds',
     'Time spent processing a single event',
     buckets=[0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0],
+    registry=METRICS_REGISTRY,
 )
 CASSANDRA_WRITE_ERRORS = Counter(
     'cassandra_write_errors_total',
     'Total number of Cassandra write errors',
+    registry=METRICS_REGISTRY,
 )
 CONSUMER_LAG = Gauge(
     'consumer_lag',
     'Consumer lag per partition',
     ['topic', 'partition'],
+    registry=METRICS_REGISTRY,
 )
 HTTP_REQUESTS_TOTAL = Counter(
     'http_requests_total',
     'Total number of HTTP requests to the metrics/health server',
     ['method', 'endpoint', 'status'],
+    registry=METRICS_REGISTRY,
 )
 HTTP_REQUEST_ERRORS_TOTAL = Counter(
     'http_request_errors_total',
     'Total number of HTTP request errors',
     ['method', 'endpoint', 'error_type'],
+    registry=METRICS_REGISTRY,
 )
 HTTP_REQUEST_DURATION_SECONDS = Histogram(
     'http_request_duration_seconds',
     'HTTP request duration in seconds',
     ['method', 'endpoint'],
     buckets=[0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0],
+    registry=METRICS_REGISTRY,
 )
 
 _health = {'kafka': False, 'cassandra': False}
@@ -70,7 +79,7 @@ class MetricsHandler(BaseHTTPRequestHandler):
 
         try:
             if endpoint == '/metrics':
-                data = generate_latest()
+                data = generate_latest(METRICS_REGISTRY)
                 self.send_response(200)
                 self.send_header('Content-Type', CONTENT_TYPE_LATEST)
                 self.end_headers()
