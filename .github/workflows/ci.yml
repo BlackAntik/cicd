@@ -123,52 +123,18 @@ jobs:
 
       - name: Start infrastructure services
         run: |
-          docker compose -f docker-compose.test.yml up -d \
+          docker compose -f docker-compose.test.yml up -d --wait \
             zookeeper kafka schema-registry cassandra
-
-      - name: Wait for Zookeeper
-        run: |
-          timeout 60 bash -c \
-            'until docker compose -f docker-compose.test.yml exec -T zookeeper \
-              bash -c "echo ruok | nc localhost 2181" 2>/dev/null | grep -q imok; \
-            do sleep 2; done'
-
-      - name: Wait for Kafka
-        run: |
-          timeout 120 bash -c \
-            'until docker compose -f docker-compose.test.yml exec -T kafka \
-              kafka-broker-api-versions --bootstrap-server localhost:9092 \
-              >/dev/null 2>&1; \
-            do sleep 5; done'
-
-      - name: Wait for Schema Registry
-        run: |
-          timeout 120 bash -c \
-            'until curl -sf http://localhost:8081/subjects >/dev/null 2>&1; \
-            do sleep 5; done'
-
-      - name: Wait for Cassandra
-        run: |
-          timeout 240 bash -c \
-            'until docker compose -f docker-compose.test.yml exec -T cassandra \
-              nodetool status 2>/dev/null | grep -qE "^UN\s+"; \
-            do sleep 10; done'
 
       - name: Initialize Kafka topics and Cassandra schema
         run: |
-          docker compose -f docker-compose.test.yml up \
-            kafka-init cassandra-init schema-init \
-            --exit-code-from schema-init
+          docker compose -f docker-compose.test.yml up --exit-code-from kafka-init kafka-init
+          docker compose -f docker-compose.test.yml up --exit-code-from cassandra-init cassandra-init
+          docker compose -f docker-compose.test.yml up --exit-code-from schema-init schema-init
 
       - name: Start consumer service
         run: |
-          docker compose -f docker-compose.test.yml up -d consumer
-
-      - name: Wait for consumer health
-        run: |
-          timeout 120 bash -c \
-            'until curl -sf http://localhost:8000/health >/dev/null 2>&1; \
-            do sleep 5; done'
+          docker compose -f docker-compose.test.yml up -d --wait consumer
 
       - name: Run integration tests
         run: |
@@ -224,38 +190,18 @@ jobs:
 
       - name: Start full stack
         run: |
-          docker compose -f docker-compose.test.yml up -d \
+          docker compose -f docker-compose.test.yml up -d --wait \
             zookeeper kafka schema-registry cassandra
-
-      - name: Wait for infrastructure
-        run: |
-          timeout 120 bash -c \
-            'until docker compose -f docker-compose.test.yml exec -T kafka \
-              kafka-broker-api-versions --bootstrap-server localhost:9092 \
-              >/dev/null 2>&1; \
-            do sleep 5; done'
-
-          timeout 120 bash -c \
-            'until curl -sf http://localhost:8081/subjects >/dev/null 2>&1; \
-            do sleep 5; done'
-
-          timeout 240 bash -c \
-            'until docker compose -f docker-compose.test.yml exec -T cassandra \
-              nodetool status 2>/dev/null | grep -qE "^UN\s+"; \
-            do sleep 10; done'
 
       - name: Initialize services
         run: |
-          docker compose -f docker-compose.test.yml up \
-            kafka-init cassandra-init schema-init \
-            --exit-code-from schema-init
+          docker compose -f docker-compose.test.yml up --exit-code-from kafka-init kafka-init
+          docker compose -f docker-compose.test.yml up --exit-code-from cassandra-init cassandra-init
+          docker compose -f docker-compose.test.yml up --exit-code-from schema-init schema-init
 
       - name: Start consumer
         run: |
-          docker compose -f docker-compose.test.yml up -d consumer
-          timeout 120 bash -c \
-            'until curl -sf http://localhost:8000/health >/dev/null 2>&1; \
-            do sleep 5; done'
+          docker compose -f docker-compose.test.yml up -d --wait consumer
 
       - name: Run E2E scenario 1
         run: |
@@ -300,36 +246,18 @@ jobs:
 
       - name: Start infrastructure
         run: |
-          docker compose -f docker-compose.test.yml up -d \
+          docker compose -f docker-compose.test.yml up -d --wait \
             zookeeper kafka schema-registry cassandra
-
-      - name: Wait for Kafka
-        run: |
-          timeout 120 bash -c \
-            'until docker compose -f docker-compose.test.yml exec -T kafka \
-              kafka-broker-api-versions --bootstrap-server localhost:9092 \
-              >/dev/null 2>&1; \
-            do sleep 5; done'
-
-      - name: Wait for Cassandra
-        run: |
-          timeout 240 bash -c \
-            'until docker compose -f docker-compose.test.yml exec -T cassandra \
-              nodetool status 2>/dev/null | grep -qE "^UN\s+"; \
-            do sleep 10; done'
 
       - name: Initialize services
         run: |
-          docker compose -f docker-compose.test.yml up \
-            kafka-init cassandra-init schema-init \
-            --exit-code-from schema-init
+          docker compose -f docker-compose.test.yml up --exit-code-from kafka-init kafka-init
+          docker compose -f docker-compose.test.yml up --exit-code-from cassandra-init cassandra-init
+          docker compose -f docker-compose.test.yml up --exit-code-from schema-init schema-init
 
       - name: Start consumer
         run: |
-          docker compose -f docker-compose.test.yml up -d consumer
-          timeout 120 bash -c \
-            'until curl -sf http://localhost:8000/health >/dev/null 2>&1; \
-            do sleep 5; done'
+          docker compose -f docker-compose.test.yml up -d --wait consumer
 
       - name: Install k6
         run: |
@@ -400,33 +328,18 @@ jobs:
 
       - name: Start infrastructure
         run: |
-          docker compose -f docker-compose.test.yml up -d \
+          docker compose -f docker-compose.test.yml up -d --wait \
             zookeeper kafka schema-registry cassandra
-
-      - name: Wait for infrastructure
-        run: |
-          timeout 120 bash -c \
-            'until docker compose -f docker-compose.test.yml exec -T kafka \
-              kafka-broker-api-versions --bootstrap-server localhost:9092 \
-              >/dev/null 2>&1; \
-            do sleep 5; done'
-          timeout 240 bash -c \
-            'until docker compose -f docker-compose.test.yml exec -T cassandra \
-              nodetool status 2>/dev/null | grep -qE "^UN\s+"; \
-            do sleep 10; done'
 
       - name: Initialize
         run: |
-          docker compose -f docker-compose.test.yml up \
-            kafka-init cassandra-init schema-init \
-            --exit-code-from schema-init
+          docker compose -f docker-compose.test.yml up --exit-code-from kafka-init kafka-init
+          docker compose -f docker-compose.test.yml up --exit-code-from cassandra-init cassandra-init
+          docker compose -f docker-compose.test.yml up --exit-code-from schema-init schema-init
 
       - name: Start consumer
         run: |
-          docker compose -f docker-compose.test.yml up -d consumer
-          timeout 120 bash -c \
-            'until curl -sf http://localhost:8000/health >/dev/null 2>&1; \
-            do sleep 5; done'
+          docker compose -f docker-compose.test.yml up -d --wait consumer
 
       - name: Validate /metrics endpoint
         run: |
@@ -489,42 +402,18 @@ jobs:
 
       - name: Start full stack with Prometheus
         run: |
-          docker compose -f docker-compose.test.yml up -d \
+          docker compose -f docker-compose.test.yml up -d --wait \
             zookeeper kafka schema-registry cassandra
-
-      - name: Wait for Kafka
-        run: |
-          timeout 120 bash -c \
-            'until docker compose -f docker-compose.test.yml exec -T kafka \
-              kafka-broker-api-versions --bootstrap-server localhost:9092 \
-              >/dev/null 2>&1; \
-            do sleep 5; done'
-
-      - name: Wait for Schema Registry
-        run: |
-          timeout 120 bash -c \
-            'until curl -sf http://localhost:8081/subjects >/dev/null 2>&1; \
-            do sleep 5; done'
-
-      - name: Wait for Cassandra
-        run: |
-          timeout 240 bash -c \
-            'until docker compose -f docker-compose.test.yml exec -T cassandra \
-              nodetool status 2>/dev/null | grep -qE "^UN\s+"; \
-            do sleep 10; done'
 
       - name: Initialize services
         run: |
-          docker compose -f docker-compose.test.yml up \
-            kafka-init cassandra-init schema-init \
-            --exit-code-from schema-init
+          docker compose -f docker-compose.test.yml up --exit-code-from kafka-init kafka-init
+          docker compose -f docker-compose.test.yml up --exit-code-from cassandra-init cassandra-init
+          docker compose -f docker-compose.test.yml up --exit-code-from schema-init schema-init
 
       - name: Start consumer
         run: |
-          docker compose -f docker-compose.test.yml up -d consumer
-          timeout 120 bash -c \
-            'until curl -sf http://localhost:8000/health >/dev/null 2>&1; \
-            do sleep 5; done'
+          docker compose -f docker-compose.test.yml up -d --wait consumer
 
       - name: Start Prometheus
         run: |

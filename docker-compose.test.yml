@@ -62,7 +62,7 @@ services:
       HEAP_NEWSIZE: 128M
       MAX_HEAP_SIZE: 512M
     healthcheck:
-      test: ["CMD-SHELL", "nodetool status | grep -E '^UN\\s+'"]
+      test: ["CMD-SHELL", "cqlsh -e 'SELECT now() FROM system.local' || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 30
@@ -75,10 +75,11 @@ services:
         condition: service_healthy
     volumes:
       - ./migrations:/migrations
-    command: >
-      bash -c "
-        sed 's/dc1.*: 3/dc1: 1/g' /migrations/init.cql | cqlsh cassandra
-      "
+    command:
+      - bash
+      - -c
+      - |
+        sed "s/'dc1': 3/'dc1': 1/g" /migrations/init.cql | cqlsh cassandra
     restart: on-failure
 
   kafka-init:
@@ -88,10 +89,8 @@ services:
         condition: service_healthy
     command: >
       bash -c "
-        kafka-topics --create --if-not-exists --bootstrap-server kafka:29092
-          --topic warehouse-events --partitions 3 --replication-factor 1 &&
-        kafka-topics --create --if-not-exists --bootstrap-server kafka:29092
-          --topic warehouse-events-dlq --partitions 1 --replication-factor 1
+        kafka-topics --create --if-not-exists --bootstrap-server kafka:29092 --topic warehouse-events --partitions 3 --replication-factor 1 &&
+        kafka-topics --create --if-not-exists --bootstrap-server kafka:29092 --topic warehouse-events-dlq --partitions 1 --replication-factor 1
       "
 
   schema-init:
@@ -131,7 +130,7 @@ services:
       METRICS_PORT: 8000
     restart: on-failure
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').getcode()==200 else 1)"]
       interval: 10s
       timeout: 5s
       retries: 20
