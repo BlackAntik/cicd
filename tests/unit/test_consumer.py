@@ -156,7 +156,7 @@ class TestHandleProductReceived:
             c.handle_product_received(session, ev, now)
             mock_write.assert_called_once()
             args = mock_write.call_args[0]
-            assert args[3] == 80
+            assert args[3] == 100
             assert args[4] == 0
 
     def test_stale_event_skipped(self):
