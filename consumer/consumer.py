@@ -520,8 +520,15 @@ def main():
 
     dlq_producer = Producer({'bootstrap.servers': bootstrap_servers})
 
-    consumer.subscribe([topic])
-    _health['kafka'] = True
+    def on_assign(consumer, partitions):
+        _health['kafka'] = True
+        logger.info('Partitions assigned: %s', partitions)
+
+    def on_revoke(consumer, partitions):
+        _health['kafka'] = False
+        logger.info('Partitions revoked: %s', partitions)
+
+    consumer.subscribe([topic], on_assign=on_assign, on_revoke=on_revoke)
     logger.info('Consumer started. Group: %s, Topic: %s', group_id, topic)
 
     lag_update_counter = 0
