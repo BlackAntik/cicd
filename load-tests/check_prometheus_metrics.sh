@@ -23,6 +23,10 @@ else:
 "
 }
 
+json_str() {
+  python3 -c "import json, sys; print(json.dumps(sys.argv[1]))" "$1"
+}
+
 check() {
   local name="$1"
   local expr="$2"
@@ -65,7 +69,7 @@ print('true' if ops.get('${op}', False) else 'false')
     fi
   fi
 
-  RESULTS+=("{\"check\":\"${name}\",\"expr\":\"${expr}\",\"value\":\"${value}\",\"op\":\"${op}\",\"threshold\":\"${threshold}\",\"status\":\"${status}\",\"rationale\":\"${rationale}\"}")
+  RESULTS+=("{\"check\":$(json_str "$name"),\"expr\":$(json_str "$expr"),\"value\":$(json_str "$value"),\"op\":$(json_str "$op"),\"threshold\":$(json_str "$threshold"),\"status\":$(json_str "$status"),\"rationale\":$(json_str "$rationale")}")
 }
 
 echo "=== Prometheus Metrics Check ==="
