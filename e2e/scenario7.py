@@ -1,3 +1,4 @@
+import os
 import uuid
 import time
 import json
@@ -15,7 +16,12 @@ TOPIC = 'warehouse-events'
 CONSUMER_URL = 'http://localhost:8000'
 PROMETHEUS_URL = 'http://localhost:9090'
 
-SCHEMA = open('../schemas/warehouse_event.avsc').read()
+SCHEMA_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    'schemas',
+    'warehouse_event.avsc',
+)
+SCHEMA = open(SCHEMA_PATH).read()
 
 EVENT_TYPES = [
     'PRODUCT_RECEIVED', 'PRODUCT_SHIPPED', 'PRODUCT_MOVED',

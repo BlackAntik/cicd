@@ -1,3 +1,4 @@
+import os
 import uuid
 import time
 import requests
@@ -18,8 +19,12 @@ CASSANDRA_HOSTS = ['localhost']
 CASSANDRA_PORT = 9042
 KEYSPACE = 'warehouse'
 
-SCHEMA_V1 = open('../schemas/warehouse_event.avsc').read()
-SCHEMA_V2 = open('../schemas/warehouse_event_v2.avsc').read()
+SCHEMA_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    'schemas',
+)
+SCHEMA_V1 = open(os.path.join(SCHEMA_DIR, 'warehouse_event.avsc')).read()
+SCHEMA_V2 = open(os.path.join(SCHEMA_DIR, 'warehouse_event_v2.avsc')).read()
 
 
 def make_ts():
