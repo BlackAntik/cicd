@@ -12,12 +12,12 @@ from cassandra.cluster import Cluster
 from cassandra.policies import DCAwareRoundRobinPolicy
 from cassandra.query import ConsistencyLevel
 
-BOOTSTRAP = 'localhost:9092'
-SCHEMA_REGISTRY = 'http://localhost:8081'
-TOPIC = 'warehouse-events'
-CASSANDRA_HOSTS = ['localhost']
-CASSANDRA_PORT = 9042
-KEYSPACE = 'warehouse'
+BOOTSTRAP = os.environ.get('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092')
+SCHEMA_REGISTRY = os.environ.get('SCHEMA_REGISTRY_URL', 'http://localhost:8081')
+TOPIC = os.environ.get('KAFKA_TOPIC', 'warehouse-events')
+CASSANDRA_HOSTS = os.environ.get('CASSANDRA_HOSTS', 'localhost').split(',')
+CASSANDRA_PORT = int(os.environ.get('CASSANDRA_PORT', '9042'))
+KEYSPACE = os.environ.get('CASSANDRA_KEYSPACE', 'warehouse')
 
 SCHEMA_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
