@@ -213,7 +213,7 @@ services:
     restart: on-failure
 
   cassandra-exporter:
-    image: criteord/cassandra-exporter:2.3.8
+    image: criteord/cassandra_exporter:2.3.8
     ports:
       - "9500:9500"
     environment:

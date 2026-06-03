@@ -16,6 +16,15 @@ docker compose -f docker-compose.test.yml up --exit-code-from integration-tests
 ./run_e2e_tests.sh
 ```
 
+# Часть 7
+
+```bash
+mkdir -p reports1
+k6 run --env CONSUMER_URL=http://localhost:8000 \
+  --out json=reports1/load-test-results.json \
+  load-tests/consumer_load_test.js
+```
+
 # Часть 9
 
 ## Проверка срабатывания алёртов
